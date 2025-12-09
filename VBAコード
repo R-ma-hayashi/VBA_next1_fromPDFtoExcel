@@ -1,104 +1,144 @@
 Option Explicit
 
-Sub CheckAndFormatSheets()
+Sub FormatAndCalculateSheets()
+    ' ==============================================================================
+    ' 概要: 全シートを対象にヘッダー行を検索し、条件に応じて書式設定と数式入力を行う
+    '
+    ' 処理フロー:
+    ' 1. 全シートをループ
+    ' 2. 各シートの1-5行目からC列またはD列にある「単位」を検索（ヘッダー行特定）
+    ' 3. ヘッダー位置と右隣のセル値（「単価」）に応じて処理を分岐
+    '    - 条件A (C列が単位): D列が「単価」以外ならE列を書式設定
+    '    - 条件B (D列が単位): E列が「単価」ならC,E,F列書式設定＆F列に数式入力
+    '                        E列が「単価」以外ならE列を書式設定
+    ' ==============================================================================
+
     Dim ws As Worksheet
-    Dim rngSearchC As Range, rngSearchD As Range
-    Dim cell As Range
+    Dim i As Long
     Dim headerRow As Long
-    Dim startRow As Long
     Dim lastRow As Long
-    Dim fillRange As Range
-    Dim processCount As Long ' 処理を行った回数をカウント
+    Dim checkCellVal As String
+    Dim isHeaderFound As Boolean
     
-    processCount = 0
-    
-    ' 全てのシートに対して処理を実行
-    For Each ws In ThisWorkbook.Worksheets
+    ' アクティブブック内の全シートをループ処理
+    For Each ws In ActiveWorkbook.Worksheets
+        isHeaderFound = False
         
-        ' デバッグ用: イミディエイトウィンドウにシート名を出力（確認用）
-        Debug.Print "シート確認中: " & ws.Name
-        
-        ' ==========================================
-        ' 1. C列 (C1:C5) の確認
-        ' ==========================================
-        Set rngSearchC = ws.Range("C1:C10")
-        
-        For Each cell In rngSearchC
-            ' "単位" という文字が含まれているか確認
-            ' vbTextCompare を追加して、全角半角の違いなどを少し緩やかに判定
-            If InStr(1, cell.Value, "単位", vbTextCompare) > 0 Then
-                headerRow = cell.Row
-                startRow = headerRow + 1
+        ' ---------------------------------------------------------
+        ' 1. ヘッダー行の特定 (1行目から5行目を走査)
+        ' ---------------------------------------------------------
+        For i = 1 To 5
+            ' C列に「単位」が含まれているか確認
+            If InStr(1, ws.Cells(i, "C").Value, "単位") > 0 Then
+                headerRow = i
                 
-                ' 最終行の取得
-                lastRow = ws.Cells(ws.Rows.Count, "E").End(xlUp).Row
-                If lastRow < 25 Then lastRow = 25
+                ' ---------------------------------------------------------
+                ' 【条件A】 C列に「単位」が見つかった場合の処理
+                ' ---------------------------------------------------------
+                ' チェック対象：右隣（D列）の値を取得し、全角・半角スペースを除去
+                checkCellVal = ws.Cells(headerRow, "D").Value
+                checkCellVal = Replace(Replace(checkCellVal, " ", ""), "　", "")
                 
-                ' E列の配置設定
-                With ws.Range(ws.Cells(startRow, "E"), ws.Cells(lastRow, "E"))
-                    .HorizontalAlignment = xlRight
-                    .VerticalAlignment = xlBottom
-                End With
+                ' A-3. 「単価」と一致しない場合のみ処理を実行
+                If checkCellVal <> "単価" Then
+                    ' E列の最終行を取得
+                    lastRow = ws.Cells(ws.Rows.Count, "E").End(xlUp).Row
+                    
+                    ' データが存在する場合（ヘッダー行より下に行がある場合）のみ実行
+                    If lastRow > headerRow Then
+                        With ws.Range(ws.Cells(headerRow + 1, "E"), ws.Cells(lastRow, "E"))
+                            .HorizontalAlignment = xlRight  ' 右揃え
+                            .VerticalAlignment = xlBottom   ' 下揃え
+                            .IndentLevel = 0                ' インデント 0
+                            .WrapText = False               ' 折り返し解除
+                        End With
+                    End If
+                End If
                 
-                processCount = processCount + 1
-                Debug.Print "  -> C列で発見: " & cell.Address
-                Exit For
+                isHeaderFound = True
+                Exit For ' ヘッダーが見つかったので行探索ループを抜ける
+                
+            ' D列に「単位」が含まれているか確認
+            ElseIf InStr(1, ws.Cells(i, "D").Value, "単位") > 0 Then
+                headerRow = i
+                
+                ' ---------------------------------------------------------
+                ' 【条件B】 D列に「単位」が見つかった場合の処理
+                ' ---------------------------------------------------------
+                ' チェック対象：右隣（E列）の値を取得し、全角・半角スペースを除去
+                checkCellVal = ws.Cells(headerRow, "E").Value
+                checkCellVal = Replace(Replace(checkCellVal, " ", ""), "　", "")
+                
+                If checkCellVal = "単価" Then
+                    ' B-3. 「単価」と一致する場合
+                    
+                    ' 最終行の取得：ヘッダーがあるD列を基準にデータ最終行を特定
+                    lastRow = ws.Cells(ws.Rows.Count, "D").End(xlUp).Row
+                    
+                    If lastRow > headerRow Then
+                        ' --- 書式設定 (C列, E列, F列) ---
+                        ' コードの重複を避けるため、配列処理等は行わず明示的に設定
+                        
+                        ' C列の書式設定
+                        With ws.Range(ws.Cells(headerRow + 1, "C"), ws.Cells(lastRow, "C"))
+                            .HorizontalAlignment = xlRight
+                            .VerticalAlignment = xlBottom
+                            .IndentLevel = 0
+                            .WrapText = False
+                        End With
+                        
+                        ' E列の書式設定
+                        With ws.Range(ws.Cells(headerRow + 1, "E"), ws.Cells(lastRow, "E"))
+                            .HorizontalAlignment = xlRight
+                            .VerticalAlignment = xlBottom
+                            .IndentLevel = 0
+                            .WrapText = False
+                        End With
+                        
+                        ' F列の書式設定
+                        With ws.Range(ws.Cells(headerRow + 1, "F"), ws.Cells(lastRow, "F"))
+                            .HorizontalAlignment = xlRight
+                            .VerticalAlignment = xlBottom
+                            .IndentLevel = 0
+                            .WrapText = False
+                        End With
+                        
+                        ' --- 数式入力 (F列) ---
+                        ' ヘッダー直下のF列セルに数式を入力: =[C列]*[E列] (例: =C3*E3)
+                        ws.Cells(headerRow + 1, "F").Formula = "=" & ws.Cells(headerRow + 1, "C").Address(False, False) & "*" & ws.Cells(headerRow + 1, "E").Address(False, False)
+                        
+                        ' データが複数行ある場合、最終行までオートフィル
+                        If lastRow > headerRow + 1 Then
+                            ws.Cells(headerRow + 1, "F").AutoFill Destination:=ws.Range(ws.Cells(headerRow + 1, "F"), ws.Cells(lastRow, "F"))
+                        End If
+                    End If
+                    
+                Else
+                    ' B-4. 「単価」と一致しない場合
+                    
+                    ' E列の最終行を取得
+                    lastRow = ws.Cells(ws.Rows.Count, "E").End(xlUp).Row
+                    
+                    If lastRow > headerRow Then
+                        ' E列の書式設定
+                        With ws.Range(ws.Cells(headerRow + 1, "E"), ws.Cells(lastRow, "E"))
+                            .HorizontalAlignment = xlRight
+                            .VerticalAlignment = xlBottom
+                            .IndentLevel = 0
+                            .WrapText = False
+                        End With
+                    End If
+                End If
+                
+                isHeaderFound = True
+                Exit For ' ヘッダーが見つかったので行探索ループを抜ける
             End If
-        Next cell
+        Next i
         
-        ' ==========================================
-        ' 2. D列 (D1:D5) の確認
-        ' ==========================================
-        Set rngSearchD = ws.Range("D1:D10")
-        
-        For Each cell In rngSearchD
-            If InStr(1, cell.Value, "単位", vbTextCompare) > 0 Then
-                headerRow = cell.Row
-                startRow = headerRow + 1
-                
-                ' 最終行の取得（UsedRangeを使用）
-                lastRow = ws.UsedRange.Rows.Count
-                If lastRow < 25 Then lastRow = 25
-                
-                ' C列の配置設定
-                With ws.Range(ws.Cells(startRow, "C"), ws.Cells(lastRow, "C"))
-                    .HorizontalAlignment = xlRight
-                    .VerticalAlignment = xlBottom
-                End With
-                
-                ' E列の配置設定
-                With ws.Range(ws.Cells(startRow, "E"), ws.Cells(lastRow, "E"))
-                    .HorizontalAlignment = xlRight
-                    .VerticalAlignment = xlBottom
-                End With
-                
-                ' F列の配置設定
-                With ws.Range(ws.Cells(startRow, "F"), ws.Cells(lastRow, "F"))
-                    .HorizontalAlignment = xlRight
-                    .VerticalAlignment = xlBottom
-                End With
-                
-                ' F列に数式を入力
-                ws.Cells(startRow, "F").Formula = "=$C" & startRow & "*$E" & startRow
-                
-                ' オートフィル実行
-                Set fillRange = ws.Range(ws.Cells(startRow, "F"), ws.Cells(25, "F"))
-                ws.Cells(startRow, "F").AutoFill Destination:=fillRange
-                
-                processCount = processCount + 1
-                Debug.Print "  -> D列で発見: " & cell.Address
-                Exit For
-            End If
-        Next cell
+        ' (注: ヘッダーが見つからなかった場合、isHeaderFoundはFalseのまま次のシートへ遷移します)
         
     Next ws
-    
-    If processCount > 0 Then
-        MsgBox "完了しました。" & vbCrLf & "合計 " & processCount & " 箇所で処理を実行しました。", vbInformation
-    Else
-        MsgBox "完了しましたが、対象となるセルが見つかりませんでした。" & vbCrLf & _
-               "・C1:C5 または D1:D5 に「単位」という文字が含まれているか確認してください。" & vbCrLf & _
-               "・スペースが含まれていないか（例：「単 価」）確認してください。", vbExclamation
-    End If
-End Sub
 
+    MsgBox "全シートの処理が完了しました。", vbInformation, "完了"
+
+End Sub
