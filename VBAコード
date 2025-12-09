@@ -1,12 +1,70 @@
 Option Explicit
 
 ' ---------------------------------------------------------------------------------------
-' Procedure : FormatAndCalculateAllSheets
-' Purpose   : 全シートを対象に、ヘッダー位置（「単位」）を特定し、
-'             隣接する「単価」項目の有無に応じて書式設定と数式入力を行う。
-'             (追加機能: A列「計」行のSUM計算、単位空欄時の計算スキップ)
+' Procedure : FormatAndCalculateAllFilesInFolder
+' Purpose   : 同一フォルダ内の全Excelブックを開き、ProcessWorkbookを実行するメイン処理
 ' ---------------------------------------------------------------------------------------
-Sub FormatAndCalculateAllSheets()
+Sub FormatAndCalculateAllFilesInFolder()
+    Dim folderPath As String
+    Dim fileName As String
+    Dim wb As Workbook
+    Dim processCount As Long
+    
+    ' 高速化設定（画面更新、自動計算、警告表示を停止）
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.DisplayAlerts = False
+    
+    ' マクロブックと同じフォルダのパスを取得
+    folderPath = ThisWorkbook.Path & "\"
+    
+    ' 拡張子が xls で始まる全ファイル (*.xlsx, *.xlsm, *.xls 等) を取得
+    fileName = Dir(folderPath & "*.xls*")
+    
+    processCount = 0
+    
+    ' フォルダ内のファイルを順次処理
+    Do While fileName <> ""
+        
+        ' このマクロブック自身、および一時ファイル(~$...)は除外する
+        If fileName <> ThisWorkbook.Name And Left(fileName, 2) <> "~$" Then
+            
+            ' エラーハンドリング（ファイル破損等で止まらないように）
+            On Error Resume Next
+            Set wb = Workbooks.Open(folderPath & fileName)
+            On Error GoTo 0
+            
+            If Not wb Is Nothing Then
+                ' 各ブックに対する処理を実行（下部のSubプロシージャを呼び出し）
+                Call ProcessWorkbook(wb)
+                
+                ' 保存して閉じる
+                wb.Close SaveChanges:=True
+                
+                processCount = processCount + 1
+                Set wb = Nothing
+            End If
+        End If
+        
+        ' 次のファイルを取得
+        fileName = Dir()
+    Loop
+    
+    ' 設定を元に戻す
+    Application.DisplayAlerts = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    
+    ' 完了メッセージ
+    MsgBox processCount & " 個のファイルを処理しました。", vbInformation, "完了"
+
+End Sub
+
+' ---------------------------------------------------------------------------------------
+' Procedure : ProcessWorkbook
+' Purpose   : 個別のブックに対する書式設定と計算処理（以前のメインロジック）
+' ---------------------------------------------------------------------------------------
+Sub ProcessWorkbook(targetWb As Workbook)
     Dim ws As Worksheet
     Dim headerRow As Long
     Dim lastRow As Long
@@ -17,12 +75,8 @@ Sub FormatAndCalculateAllSheets()
     Dim cellAVal As String
     Dim unitVal As String
     
-    ' 画面更新と自動計算を停止して処理速度を向上させる
-    Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationManual
-    
-    ' 1. ループ処理: ブック内の全てのシートを巡回
-    For Each ws In ActiveWorkbook.Worksheets
+    ' 1. ループ処理: 対象ブック内の全てのシートを巡回
+    For Each ws In targetWb.Worksheets
         
         ' 変数の初期化
         headerRow = 0
@@ -82,7 +136,7 @@ Sub FormatAndCalculateAllSheets()
                     If checkVal = "単価" Then
                         ' --- 条件: E列が「単価」の場合 ---
                         
-                        ' 書式設定を一括適用（ループ外で行う方が高速）
+                        ' 書式設定を一括適用
                         With Union(ws.Range(ws.Cells(dataStartRow, "C"), ws.Cells(lastRow, "C")), _
                                    ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E")), _
                                    ws.Range(ws.Cells(dataStartRow, "F"), ws.Cells(lastRow, "F")))
@@ -100,7 +154,6 @@ Sub FormatAndCalculateAllSheets()
                             ' 優先順位1: A列に「計」が含まれている場合
                             If InStr(cellAVal, "計") > 0 Then
                                 ' データ開始行から直前行までの合計をF列に出す
-                                ' 例: =SUM(F6:F10)
                                 If r > dataStartRow Then
                                     ws.Cells(r, "F").Formula = "=SUM(F" & dataStartRow & ":F" & (r - 1) & ")"
                                 End If
@@ -129,12 +182,4 @@ Sub FormatAndCalculateAllSheets()
             End If
         End If
     Next ws
-    
-    ' 設定を元に戻す
-    Application.ScreenUpdating = True
-    Application.Calculation = xlCalculationAutomatic
-
-    MsgBox "全シートの処理が完了しました。", vbInformation, "完了"
-
 End Sub
-
