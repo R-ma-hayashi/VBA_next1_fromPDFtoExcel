@@ -19,7 +19,7 @@ Sub FormatAndCalculateAllSheets()
     Application.Calculation = xlCalculationManual
     
     ' 1. ループ処理: ブック内の全てのシートを巡回
-    For Each ws In ThisWorkbook.Worksheets
+    For Each ws In ActiveWorkbook.Worksheets
         
         ' 変数の初期化
         headerRow = 0
