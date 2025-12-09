@@ -1,123 +1,146 @@
 Option Explicit
 
-' ---------------------------------------------------------------------------------------
-' Procedure : FormatAndCalculateAllFilesInFolder
-' Purpose   : 同一フォルダ内の全Excelブックを開き、ProcessWorkbookを実行するメイン処理
-' ---------------------------------------------------------------------------------------
-Sub FormatAndCalculateAllFilesInFolder()
+' ==============================================================================
+' プロシージャ1: あなたの作成したVBAコードのみを実行（フォルダ内一括処理）
+' ==============================================================================
+Sub FormatAndCalculate_OnlyMine()
     Dim folderPath As String
     Dim fileName As String
     Dim wb As Workbook
     Dim processCount As Long
     
-    ' 高速化設定（画面更新、自動計算、警告表示を停止）
+    ' 高速化設定
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
     Application.DisplayAlerts = False
     
-    ' マクロブックと同じフォルダのパスを取得
     folderPath = ThisWorkbook.Path & "\"
-    
-    ' 拡張子が xls で始まる全ファイル (*.xlsx, *.xlsm, *.xls 等) を取得
     fileName = Dir(folderPath & "*.xls*")
-    
     processCount = 0
     
-    ' フォルダ内のファイルを順次処理
     Do While fileName <> ""
-        
-        ' このマクロブック自身、および一時ファイル(~$...)は除外する
         If fileName <> ThisWorkbook.Name And Left(fileName, 2) <> "~$" Then
-            
-            ' エラーハンドリング（ファイル破損等で止まらないように）
             On Error Resume Next
             Set wb = Workbooks.Open(folderPath & fileName)
             On Error GoTo 0
             
             If Not wb Is Nothing Then
-                ' 各ブックに対する処理を実行（下部のSubプロシージャを呼び出し）
-                Call ProcessWorkbook(wb)
+                ' ★あなたの処理のみ実行
+                Call Process_MyLogic(wb)
                 
-                ' 保存して閉じる
                 wb.Close SaveChanges:=True
-                
                 processCount = processCount + 1
                 Set wb = Nothing
             End If
         End If
-        
-        ' 次のファイルを取得
         fileName = Dir()
     Loop
     
-    ' 設定を元に戻す
+    ' 設定復帰
     Application.DisplayAlerts = True
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
     
-    ' 完了メッセージ
-    MsgBox processCount & " 個のファイルを処理しました。", vbInformation, "完了"
-
+    MsgBox processCount & " 個のファイルを処理しました（自分のみ）。", vbInformation, "完了"
 End Sub
 
-' ---------------------------------------------------------------------------------------
-' Procedure : ProcessWorkbook
-' Purpose   : 個別のブックに対する書式設定と計算処理（以前のメインロジック）
-' ---------------------------------------------------------------------------------------
-Sub ProcessWorkbook(targetWb As Workbook)
+' ==============================================================================
+' プロシージャ2: 先輩の処理 → あなたの処理 の順で合体実行（フォルダ内一括処理）
+' ==============================================================================
+Sub FormatAndCalculate_Combined()
+    Dim folderPath As String
+    Dim fileName As String
+    Dim wb As Workbook
+    Dim processCount As Long
+    
+    ' 高速化設定
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.DisplayAlerts = False
+    
+    folderPath = ThisWorkbook.Path & "\"
+    fileName = Dir(folderPath & "*.xls*")
+    processCount = 0
+    
+    Do While fileName <> ""
+        If fileName <> ThisWorkbook.Name And Left(fileName, 2) <> "~$" Then
+            On Error Resume Next
+            Set wb = Workbooks.Open(folderPath & fileName)
+            On Error GoTo 0
+            
+            If Not wb Is Nothing Then
+                ' -------------------------------------------------------
+                ' ここで2つの処理を連続実行
+                ' -------------------------------------------------------
+                ' 1. 先輩の処理を実行（分割・表紙作成・枠線など）
+                Call Process_SeniorLogic(wb)
+                
+                ' 2. その後、あなたの処理を実行（計算・書式など）
+                '    ※先輩の処理でシートが増減しているため、
+                '      全シートループするあなたのロジックが有効に働きます
+                Call Process_MyLogic(wb)
+                ' -------------------------------------------------------
+                
+                wb.Close SaveChanges:=True
+                processCount = processCount + 1
+                Set wb = Nothing
+            End If
+        End If
+        fileName = Dir()
+    Loop
+    
+    ' 設定復帰
+    Application.DisplayAlerts = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    
+    MsgBox processCount & " 個のファイルを処理しました（先輩＋自分）。", vbInformation, "完了"
+End Sub
+
+' ==============================================================================
+' 【共通部品 A】 あなたのロジック (ProcessWorkbookをリネーム)
+'  ※引数で渡されたブックに対して処理を行います
+' ==============================================================================
+Sub Process_MyLogic(targetWb As Workbook)
     Dim ws As Worksheet
     Dim headerRow As Long
     Dim lastRow As Long
     Dim i As Long, r As Long
-    Dim matchedColumn As String ' "C" または "D"
+    Dim matchedColumn As String
     Dim checkVal As String
     Dim dataStartRow As Long
     Dim cellAVal As String
     Dim unitVal As String
     
-    ' 1. ループ処理: 対象ブック内の全てのシートを巡回
     For Each ws In targetWb.Worksheets
-        
-        ' 変数の初期化
         headerRow = 0
         matchedColumn = ""
         
-        ' 2. ヘッダー行の特定: 1行目から5行目を探索
+        ' ヘッダー行の特定
         For i = 1 To 5
-            ' C列に「単位」が含まれるか確認
             If InStr(ws.Cells(i, "C").Value, "単位") > 0 Then
                 headerRow = i
                 matchedColumn = "C"
-                Exit For ' 見つかったらループを抜ける
-            ' D列に「単位」が含まれるか確認
+                Exit For
             ElseIf InStr(ws.Cells(i, "D").Value, "単位") > 0 Then
                 headerRow = i
                 matchedColumn = "D"
-                Exit For ' 見つかったらループを抜ける
+                Exit For
             End If
         Next i
         
-        ' ヘッダーが見つかった場合のみ処理を続行
         If headerRow > 0 Then
-            
-            ' データの最終行を取得（A列を基準）
             lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
             dataStartRow = headerRow + 1
             
-            ' データ行が存在する場合のみ実行
             If lastRow >= dataStartRow Then
-                
-                ' 3. 条件分岐処理
                 If matchedColumn = "C" Then
-                    ' 【パターンA】 C列に「単位」がある場合
-                    
+                    ' パターンA
                     checkVal = ws.Cells(headerRow, "D").Value
                     checkVal = Replace(checkVal, " ", "")
                     checkVal = Replace(checkVal, "　", "")
                     
-                    ' D列が「単価」ではない場合
                     If checkVal <> "単価" Then
-                        ' E列の書式設定
                         With ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E"))
                             .HorizontalAlignment = xlRight
                             .VerticalAlignment = xlBottom
@@ -127,16 +150,12 @@ Sub ProcessWorkbook(targetWb As Workbook)
                     End If
                     
                 ElseIf matchedColumn = "D" Then
-                    ' 【パターンB】 D列に「単位」がある場合
-                    
+                    ' パターンB
                     checkVal = ws.Cells(headerRow, "E").Value
                     checkVal = Replace(checkVal, " ", "")
                     checkVal = Replace(checkVal, "　", "")
                     
                     If checkVal = "単価" Then
-                        ' --- 条件: E列が「単価」の場合 ---
-                        
-                        ' 書式設定を一括適用
                         With Union(ws.Range(ws.Cells(dataStartRow, "C"), ws.Cells(lastRow, "C")), _
                                    ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E")), _
                                    ws.Range(ws.Cells(dataStartRow, "F"), ws.Cells(lastRow, "F")))
@@ -146,31 +165,19 @@ Sub ProcessWorkbook(targetWb As Workbook)
                             .IndentLevel = 0
                         End With
                         
-                        ' 行ごとの計算式設定ループ
                         For r = dataStartRow To lastRow
-                            cellAVal = ws.Cells(r, "A").Value      ' A列の値
-                            unitVal = ws.Cells(r, "D").Value       ' 単位列(D列)の値
+                            cellAVal = ws.Cells(r, "A").Value
+                            unitVal = ws.Cells(r, "D").Value
                             
-                            ' 優先順位1: A列に「計」が含まれている場合
                             If InStr(cellAVal, "計") > 0 Then
-                                ' データ開始行から直前行までの合計をF列に出す
                                 If r > dataStartRow Then
                                     ws.Cells(r, "F").Formula = "=SUM(F" & dataStartRow & ":F" & (r - 1) & ")"
                                 End If
-                                
-                            ' 優先順位2: 単位列(D列)に値がある場合のみ計算
                             ElseIf Trim(unitVal) <> "" Then
-                                ' 通常の掛け算: =C行 * E行
                                 ws.Cells(r, "F").Formula = "=C" & r & "*E" & r
-                                
-                            ' それ以外（単位が空で、計でもない）は計算式を記述しない
                             End If
                         Next r
-                        
                     Else
-                        ' --- 条件: E列が「単価」ではない場合 ---
-                        
-                        ' E列の書式設定のみ
                         With ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E"))
                             .HorizontalAlignment = xlRight
                             .VerticalAlignment = xlBottom
@@ -183,3 +190,212 @@ Sub ProcessWorkbook(targetWb As Workbook)
         End If
     Next ws
 End Sub
+
+' ==============================================================================
+' 【共通部品 B】 先輩のロジック (連続処理用にActiveWorkbook依存を排除)
+'  ※引数で渡されたブックに対して処理を行います
+' ==============================================================================
+Sub Process_SeniorLogic(targetWb As Workbook)
+    Dim wsSource As Worksheet, wsNew As Worksheet, wsCover As Worksheet
+    Dim prevSheet As Worksheet
+    Dim foundCell As Range, searchRange As Range, cell As Range
+    Dim headerRowIdx As Long, nameColIdx As Long
+    Dim lastRow As Long, startRow As Long, r As Long, endRow As Long
+    Dim pageCounter As Integer
+    Dim sheetList As Collection
+    Dim ws As Worksheet
+    Dim processedSheets As Object
+    Dim sheetName As Variant
+    Dim cellText As String
+    Dim currentLastRow As Long
+    Dim lastCol As Long
+    Dim drawRange As Range
+    
+    ' 行の高さ設定
+    Const Height_HeaderArea As Double = 19
+    Const Height_DataArea As Double = 35
+    
+    Set processedSheets = CreateObject("Scripting.Dictionary")
+    
+    ' --- 1. Table 1 の存在確認 ---
+    On Error Resume Next
+    Set wsSource = targetWb.Sheets("Table 1")
+    On Error GoTo 0
+    
+    ' Table 1がない場合は何もしないで終了（エラーメッセージは出さない）
+    If wsSource Is Nothing Then Exit Sub
+    
+    ' --- 2. 他のシートの順番を記憶 ---
+    Set sheetList = New Collection
+    For Each ws In targetWb.Worksheets
+        If ws.Name <> "Table 1" Then
+            sheetList.Add ws.Name
+        End If
+    Next ws
+    
+    ' --- 3. Table 1内のヘッダー行を探す ---
+    Set searchRange = wsSource.Range("A1:Z30")
+    Set foundCell = Nothing
+    
+    For Each cell In searchRange
+        cellText = Replace(Replace(cell.Value, " ", ""), "　", "")
+        If cellText = "名称" Then
+            Set foundCell = cell
+            Exit For
+        End If
+    Next cell
+    
+    If foundCell Is Nothing Then Exit Sub ' 見つからなければ終了
+    
+    headerRowIdx = foundCell.Row
+    nameColIdx = foundCell.Column
+    lastRow = wsSource.Cells(wsSource.Rows.Count, nameColIdx).End(xlUp).Row
+    
+    ' --- 4. 「表紙」シートの作成 ---
+    wsSource.Copy Before:=targetWb.Sheets(1)
+    Set wsCover = targetWb.Sheets(1) ' コピー直後の先頭シート
+    wsCover.Name = "表紙"
+    processedSheets.Add "表紙", True
+    
+    Set prevSheet = wsCover
+    
+    If headerRowIdx > 2 Then
+        Dim deleteStartRow As Long
+        deleteStartRow = (headerRowIdx - 2) + 1
+        If deleteStartRow <= wsCover.Rows.Count Then
+            wsCover.Rows(deleteStartRow & ":" & wsCover.Rows.Count).Delete
+        End If
+    Else
+        wsCover.Rows(headerRowIdx & ":" & wsCover.Rows.Count).Delete
+    End If
+    
+    ' --- 5. Table 1 を分割 ---
+    pageCounter = 1
+    startRow = headerRowIdx + 1
+    
+    For r = startRow To lastRow
+        If (wsSource.Cells(r, nameColIdx).Value = "" And wsSource.Cells(r + 1, nameColIdx).Value = "") Or r = lastRow Then
+            
+            If r = lastRow Then
+                endRow = lastRow
+            Else
+                endRow = r - 1
+            End If
+            
+            If endRow >= startRow Then
+                wsSource.Copy After:=prevSheet
+                ' コピーされたシートを取得（ActiveSheetではなくインデックスで追跡）
+                Set wsNew = targetWb.Worksheets(prevSheet.Index + 1)
+                Set prevSheet = wsNew
+                
+                On Error Resume Next
+                wsNew.Name = CStr(pageCounter)
+                On Error GoTo 0
+                processedSheets.Add wsNew.Name, True
+                
+                wsNew.Rows(endRow + 1 & ":" & wsNew.Rows.Count).Delete
+                If startRow > 1 Then
+                    wsNew.Rows("1:" & startRow - 1).Delete
+                End If
+                
+                wsNew.Rows("1:3").Insert Shift:=xlDown
+                wsSource.Rows(headerRowIdx).Copy Destination:=wsNew.Rows(3)
+                
+                ' 高さ設定
+                wsNew.Rows("1:3").RowHeight = Height_HeaderArea
+                wsNew.Rows("4:23").RowHeight = Height_DataArea
+                
+                ' 枠線
+                currentLastRow = wsNew.Cells(wsNew.Rows.Count, nameColIdx).End(xlUp).Row
+                lastCol = wsNew.Cells(3, wsNew.Columns.Count).End(xlToLeft).Column
+                If lastCol < 1 Then lastCol = 10
+                
+                If currentLastRow < 23 Then
+                    Set drawRange = wsNew.Range(wsNew.Cells(currentLastRow + 1, 1), wsNew.Cells(23, lastCol))
+                    With drawRange.Borders
+                        .LineStyle = xlContinuous
+                        .Weight = xlThin
+                    End With
+                End If
+                
+                pageCounter = pageCounter + 1
+            End If
+            
+            If r < lastRow Then
+                Do While wsSource.Cells(r + 1, nameColIdx).Value = "" And r < lastRow
+                    r = r + 1
+                Loop
+                startRow = r + 1
+            End If
+            
+        End If
+    Next r
+    
+    ' --- 6. Table 1 削除 ---
+    Application.DisplayAlerts = False
+    wsSource.Delete
+    
+    ' --- 7. 残りのシート処理 ---
+    Dim localHeaderRow As Long
+    Dim localFound As Range
+    
+    For Each sheetName In sheetList
+        On Error Resume Next
+        Set ws = targetWb.Sheets(sheetName)
+        On Error GoTo 0
+        
+        If Not ws Is Nothing Then
+            ws.Rows(1).Insert Shift:=xlDown
+            
+            ' ヘッダー探し
+            localHeaderRow = 0
+            Set localFound = Nothing
+            For Each cell In ws.Range("A1:Z20")
+                cellText = Replace(Replace(cell.Value, " ", ""), "　", "")
+                If cellText = "名称" Then
+                    localHeaderRow = cell.Row
+                    Exit For
+                End If
+            Next cell
+            
+            If localHeaderRow > 0 Then
+                ws.Rows("1:" & localHeaderRow).RowHeight = Height_HeaderArea
+                ws.Rows((localHeaderRow + 1) & ":23").RowHeight = Height_DataArea
+            Else
+                ws.Rows("1:3").RowHeight = Height_HeaderArea
+                ws.Rows("4:23").RowHeight = Height_DataArea
+            End If
+            
+            ' 枠線
+            currentLastRow = ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1
+            If currentLastRow < 1 Then currentLastRow = 1
+            lastCol = ws.UsedRange.Columns.Count + ws.UsedRange.Column - 1
+            If lastCol < 1 Then lastCol = 10
+            
+            If currentLastRow < 23 Then
+                Set drawRange = ws.Range(ws.Cells(currentLastRow + 1, 1), ws.Cells(23, lastCol))
+                With drawRange.Borders
+                    .LineStyle = xlContinuous
+                    .Weight = xlThin
+                End With
+            End If
+            
+            If Not processedSheets.Exists(ws.Name) Then
+                ws.Name = "Temp_Name_" & pageCounter
+                pageCounter = pageCounter + 1
+            End If
+        End If
+    Next sheetName
+    
+    ' 名称の整理
+    For Each ws In targetWb.Worksheets
+        If ws.Name Like "Temp_Name_*" Then
+            Dim num As String
+            num = Replace(ws.Name, "Temp_Name_", "")
+            ws.Name = num
+        End If
+    Next ws
+    
+    ' 完了メッセージは一括処理の邪魔になるので削除
+End Sub
+
