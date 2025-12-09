@@ -1,0 +1,104 @@
+Option Explicit
+
+Sub CheckAndFormatSheets()
+    Dim ws As Worksheet
+    Dim rngSearchC As Range, rngSearchD As Range
+    Dim cell As Range
+    Dim headerRow As Long
+    Dim startRow As Long
+    Dim lastRow As Long
+    Dim fillRange As Range
+    Dim processCount As Long ' 処理を行った回数をカウント
+    
+    processCount = 0
+    
+    ' 全てのシートに対して処理を実行
+    For Each ws In ThisWorkbook.Worksheets
+        
+        ' デバッグ用: イミディエイトウィンドウにシート名を出力（確認用）
+        Debug.Print "シート確認中: " & ws.Name
+        
+        ' ==========================================
+        ' 1. C列 (C1:C5) の確認
+        ' ==========================================
+        Set rngSearchC = ws.Range("C1:C10")
+        
+        For Each cell In rngSearchC
+            ' "単位" という文字が含まれているか確認
+            ' vbTextCompare を追加して、全角半角の違いなどを少し緩やかに判定
+            If InStr(1, cell.Value, "単位", vbTextCompare) > 0 Then
+                headerRow = cell.Row
+                startRow = headerRow + 1
+                
+                ' 最終行の取得
+                lastRow = ws.Cells(ws.Rows.Count, "E").End(xlUp).Row
+                If lastRow < 25 Then lastRow = 25
+                
+                ' E列の配置設定
+                With ws.Range(ws.Cells(startRow, "E"), ws.Cells(lastRow, "E"))
+                    .HorizontalAlignment = xlRight
+                    .VerticalAlignment = xlBottom
+                End With
+                
+                processCount = processCount + 1
+                Debug.Print "  -> C列で発見: " & cell.Address
+                Exit For
+            End If
+        Next cell
+        
+        ' ==========================================
+        ' 2. D列 (D1:D5) の確認
+        ' ==========================================
+        Set rngSearchD = ws.Range("D1:D10")
+        
+        For Each cell In rngSearchD
+            If InStr(1, cell.Value, "単位", vbTextCompare) > 0 Then
+                headerRow = cell.Row
+                startRow = headerRow + 1
+                
+                ' 最終行の取得（UsedRangeを使用）
+                lastRow = ws.UsedRange.Rows.Count
+                If lastRow < 25 Then lastRow = 25
+                
+                ' C列の配置設定
+                With ws.Range(ws.Cells(startRow, "C"), ws.Cells(lastRow, "C"))
+                    .HorizontalAlignment = xlRight
+                    .VerticalAlignment = xlBottom
+                End With
+                
+                ' E列の配置設定
+                With ws.Range(ws.Cells(startRow, "E"), ws.Cells(lastRow, "E"))
+                    .HorizontalAlignment = xlRight
+                    .VerticalAlignment = xlBottom
+                End With
+                
+                ' F列の配置設定
+                With ws.Range(ws.Cells(startRow, "F"), ws.Cells(lastRow, "F"))
+                    .HorizontalAlignment = xlRight
+                    .VerticalAlignment = xlBottom
+                End With
+                
+                ' F列に数式を入力
+                ws.Cells(startRow, "F").Formula = "=$C" & startRow & "*$E" & startRow
+                
+                ' オートフィル実行
+                Set fillRange = ws.Range(ws.Cells(startRow, "F"), ws.Cells(25, "F"))
+                ws.Cells(startRow, "F").AutoFill Destination:=fillRange
+                
+                processCount = processCount + 1
+                Debug.Print "  -> D列で発見: " & cell.Address
+                Exit For
+            End If
+        Next cell
+        
+    Next ws
+    
+    If processCount > 0 Then
+        MsgBox "完了しました。" & vbCrLf & "合計 " & processCount & " 箇所で処理を実行しました。", vbInformation
+    Else
+        MsgBox "完了しましたが、対象となるセルが見つかりませんでした。" & vbCrLf & _
+               "・C1:C5 または D1:D5 に「単位」という文字が含まれているか確認してください。" & vbCrLf & _
+               "・スペースが含まれていないか（例：「単 価」）確認してください。", vbExclamation
+    End If
+End Sub
+
