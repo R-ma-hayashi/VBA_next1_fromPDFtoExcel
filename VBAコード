@@ -1,148 +1,128 @@
 Option Explicit
 
-' ==============================================================================
-' 概要: ブック内の全シートを巡回し、特定のヘッダー条件に基づいて書式設定と数式入力を行う
-' 対象: "単位"と"単価"の文字列を持つシート
-' ==============================================================================
-Public Sub FormatAndCalculateInvoiceData()
+' ---------------------------------------------------------------------------------------
+' Procedure : FormatAndCalculateAllSheets
+' Purpose   : 全シートを対象に、ヘッダー位置（「単位」）を特定し、
+'             隣接する「単価」項目の有無に応じて書式設定と数式入力を行う。
+' ---------------------------------------------------------------------------------------
+Sub FormatAndCalculateAllSheets()
     Dim ws As Worksheet
-    Dim searchRange As Range
-    Dim cell As Range
     Dim headerRow As Long
-    Dim foundUnit As Boolean
+    Dim lastRow As Long
+    Dim i As Long
+    Dim matchedColumn As String ' "C" または "D"
+    Dim checkVal As String
+    Dim dataStartRow As Long
     
-    ' ブック内の全シートをループ処理
+    ' 画面更新と自動計算を停止して処理速度を向上させる
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    ' 1. ループ処理: ブック内の全てのシートを巡回
     For Each ws In ThisWorkbook.Worksheets
         
-        ' ---------------------------------------------------------
-        ' 1. ヘッダー行の特定 (C1:D5の範囲で「単位」を探す)
-        ' ---------------------------------------------------------
-        Set searchRange = ws.Range("C1:D5")
-        foundUnit = False
+        ' 変数の初期化
         headerRow = 0
+        matchedColumn = ""
         
-        ' 範囲内を走査
-        For Each cell In searchRange
-            ' 「単位」が含まれているか判定（部分一致も考慮する場合はInStr、完全一致なら = を使用）
-            ' ここでは「文字列が含まれている」という要件に従いInStrを使用
-            If InStr(cell.Value, "単位") > 0 Then
-                headerRow = cell.Row
-                foundUnit = True
-                
-                ' 「単位」が見つかった列に応じて処理を分岐
-                If cell.Column = 3 Then ' C列の場合
-                    Call ProcessUnitInColumnC(ws, headerRow)
-                ElseIf cell.Column = 4 Then ' D列の場合
-                    Call ProcessUnitInColumnD(ws, headerRow)
-                End If
-                
-                ' 1シートにつきヘッダーは1箇所と仮定し、見つかったらこのシートの検索ループを抜ける
-                Exit For
+        ' 2. ヘッダー行の特定: 1行目から5行目を探索
+        For i = 1 To 5
+            ' C列に「単位」が含まれるか確認
+            If InStr(ws.Cells(i, "C").Value, "単位") > 0 Then
+                headerRow = i
+                matchedColumn = "C"
+                Exit For ' 見つかったらループを抜ける
+            ' D列に「単位」が含まれるか確認
+            ElseIf InStr(ws.Cells(i, "D").Value, "単位") > 0 Then
+                headerRow = i
+                matchedColumn = "D"
+                Exit For ' 見つかったらループを抜ける
             End If
-        Next cell
+        Next i
         
-        ' 「単位」が見つからなかった場合は何もしない（次のシートへ）
-        
+        ' ヘッダーが見つかった場合のみ処理を続行
+        If headerRow > 0 Then
+            
+            ' データの最終行を取得（C列を基準とする）
+            lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
+            dataStartRow = headerRow + 1
+            
+            ' データ行が存在する場合のみ実行（ヘッダーのみのシートを除外）
+            If lastRow >= dataStartRow Then
+                
+                ' 3. 条件分岐処理
+                If matchedColumn = "C" Then
+                    ' 【パターンA】 C列に「単位」がある場合
+                    
+                    ' ヘッダー行のD列の値を取得し、スペースを除去して「単価」と比較
+                    checkVal = ws.Cells(headerRow, "D").Value
+                    checkVal = Replace(checkVal, " ", "")  ' 半角スペース除去
+                    checkVal = Replace(checkVal, "　", "") ' 全角スペース除去
+                    
+                    ' D列が「単価」ではない場合
+                    If checkVal <> "単価" Then
+                        ' E列の書式設定（右揃え、下揃え、インデント0、折り返し解除）
+                        With ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E"))
+                            .HorizontalAlignment = xlRight
+                            .VerticalAlignment = xlBottom
+                            .WrapText = False
+                            .IndentLevel = 0
+                        End With
+                    End If
+                    
+                ElseIf matchedColumn = "D" Then
+                    ' 【パターンB】 D列に「単位」がある場合
+                    
+                    ' ヘッダー行のE列の値を取得し、スペースを除去して「単価」と比較
+                    checkVal = ws.Cells(headerRow, "E").Value
+                    checkVal = Replace(checkVal, " ", "")
+                    checkVal = Replace(checkVal, "　", "")
+                    
+                    If checkVal = "単価" Then
+                        ' --- 条件: E列が「単価」の場合 ---
+                        
+                        ' C列、E列、F列の書式設定（右揃え、下揃え、インデント0、折り返し解除）
+                        ' Unionを使用して複数の範囲をまとめて設定
+                        With Union(ws.Range(ws.Cells(dataStartRow, "C"), ws.Cells(lastRow, "C")), _
+                                   ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E")), _
+                                   ws.Range(ws.Cells(dataStartRow, "F"), ws.Cells(lastRow, "F")))
+                            .HorizontalAlignment = xlRight
+                            .VerticalAlignment = xlBottom
+                            .WrapText = False
+                            .IndentLevel = 0
+                        End With
+                        
+                        ' F列に数式を入力 (=C列 * E列)
+                        ' まず先頭セルに数式を入力
+                        ws.Cells(dataStartRow, "F").Formula = "=C" & dataStartRow & "*E" & dataStartRow
+                        
+                        ' 最終行までオートフィル（データ行が複数ある場合のみ）
+                        If lastRow > dataStartRow Then
+                            ws.Cells(dataStartRow, "F").AutoFill _
+                                Destination:=ws.Range(ws.Cells(dataStartRow, "F"), ws.Cells(lastRow, "F"))
+                        End If
+                        
+                    Else
+                        ' --- 条件: E列が「単価」ではない場合 ---
+                        
+                        ' E列の書式設定（右揃え、下揃え、インデント0、折り返し解除）
+                        With ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E"))
+                            .HorizontalAlignment = xlRight
+                            .VerticalAlignment = xlBottom
+                            .WrapText = False
+                            .IndentLevel = 0
+                        End With
+                    End If
+                End If
+            End If
+        End If
     Next ws
     
-    MsgBox "全シートの処理が完了しました。", vbInformation, "処理完了"
-    
+    ' 設定を元に戻す
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+
+    MsgBox "全シートの処理が完了しました。", vbInformation, "完了"
+
 End Sub
 
-' ==============================================================================
-' 処理ロジックA: 「単位」がC列に見つかった場合の処理
-' ==============================================================================
-Private Sub ProcessUnitInColumnC(ByVal ws As Worksheet, ByVal headerRow As Long)
-    Dim checkVal As String
-    Dim lastRow As Long
-    
-    ' D列の値を確認（スペース除去して正規化）
-    checkVal = GetNormalizedString(ws.Cells(headerRow, "D").Value)
-    
-    ' データ最終行を取得（C列基準）
-    lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
-    
-    ' データ行が存在しない場合は処理を終了
-    If lastRow <= headerRow Then Exit Sub
-    
-    ' 条件: D列が「単価」でない場合
-    If checkVal <> "単価" Then
-        ' E列の書式設定
-        Call ApplyCellFormatting(ws.Range(ws.Cells(headerRow + 1, "E"), ws.Cells(lastRow, "E")))
-    End If
-End Sub
-
-' ==============================================================================
-' 処理ロジックB: 「単位」がD列に見つかった場合の処理
-' ==============================================================================
-Private Sub ProcessUnitInColumnD(ByVal ws As Worksheet, ByVal headerRow As Long)
-    Dim checkVal As String
-    Dim lastRow As Long
-    Dim targetRangeF As Range
-    
-    ' E列の値を確認（スペース除去して正規化）
-    checkVal = GetNormalizedString(ws.Cells(headerRow, "E").Value)
-    
-    ' データ最終行を取得（D列基準）
-    lastRow = ws.Cells(ws.Rows.Count, "D").End(xlUp).Row
-    
-    ' データ行が存在しない場合は処理を終了
-    If lastRow <= headerRow Then Exit Sub
-    
-    ' 条件分岐
-    If checkVal = "単価" Then
-        ' -----------------------------------------------------
-        ' ケース: E列が「単価」と等しい場合
-        ' -----------------------------------------------------
-        
-        ' 書式設定 (C列, E列, F列)
-        Call ApplyCellFormatting(ws.Range(ws.Cells(headerRow + 1, "C"), ws.Cells(lastRow, "C")))
-        Call ApplyCellFormatting(ws.Range(ws.Cells(headerRow + 1, "E"), ws.Cells(lastRow, "E")))
-        Call ApplyCellFormatting(ws.Range(ws.Cells(headerRow + 1, "F"), ws.Cells(lastRow, "F")))
-        
-        ' 数式入力 (F列 = C列 * E列)
-        ' 先頭セルに数式を入力
-        ws.Cells(headerRow + 1, "F").Formula = "=C" & (headerRow + 1) & "*E" & (headerRow + 1)
-        
-        ' データが複数行ある場合のみオートフィルを実行
-        If lastRow > headerRow + 1 Then
-            Set targetRangeF = ws.Range(ws.Cells(headerRow + 1, "F"), ws.Cells(lastRow, "F"))
-            ws.Cells(headerRow + 1, "F").AutoFill Destination:=targetRangeF
-        End If
-        
-    Else
-        ' -----------------------------------------------------
-        ' ケース: E列が「単価」と等しくない場合
-        ' -----------------------------------------------------
-        
-        ' E列の書式設定のみ
-        Call ApplyCellFormatting(ws.Range(ws.Cells(headerRow + 1, "E"), ws.Cells(lastRow, "E")))
-    End If
-End Sub
-
-' ==============================================================================
-' 共通処理: セルの書式設定を適用
-' 仕様: 右揃え、下揃え、インデント0、折り返し解除
-' ==============================================================================
-Private Sub ApplyCellFormatting(ByVal rng As Range)
-    If rng Is Nothing Then Exit Sub
-    
-    With rng
-        .HorizontalAlignment = xlRight   ' 水平方向: 右揃え
-        .VerticalAlignment = xlBottom    ' 垂直方向: 下揃え
-        .IndentLevel = 0                 ' インデント: 0
-        .WrapText = False                ' 折り返し: 解除
-    End With
-End Sub
-
-' ==============================================================================
-' ヘルパー関数: 文字列の正規化
-' 機能: 前後の空白除去(Trim)および文字列中の半角/全角スペースを全て除去
-' ==============================================================================
-Private Function GetNormalizedString(ByVal inputStr As String) As String
-    Dim result As String
-    result = Trim(inputStr)              ' 前後の空白除去
-    result = Replace(result, " ", "")    ' 半角スペース除去
-    result = Replace(result, "　", "")   ' 全角スペース除去
-    GetNormalizedString = result
-End Function
