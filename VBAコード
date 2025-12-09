@@ -4,15 +4,18 @@ Option Explicit
 ' Procedure : FormatAndCalculateAllSheets
 ' Purpose   : 全シートを対象に、ヘッダー位置（「単位」）を特定し、
 '             隣接する「単価」項目の有無に応じて書式設定と数式入力を行う。
+'             (追加機能: A列「計」行のSUM計算、単位空欄時の計算スキップ)
 ' ---------------------------------------------------------------------------------------
 Sub FormatAndCalculateAllSheets()
     Dim ws As Worksheet
     Dim headerRow As Long
     Dim lastRow As Long
-    Dim i As Long
+    Dim i As Long, r As Long
     Dim matchedColumn As String ' "C" または "D"
     Dim checkVal As String
     Dim dataStartRow As Long
+    Dim cellAVal As String
+    Dim unitVal As String
     
     ' 画面更新と自動計算を停止して処理速度を向上させる
     Application.ScreenUpdating = False
@@ -43,25 +46,24 @@ Sub FormatAndCalculateAllSheets()
         ' ヘッダーが見つかった場合のみ処理を続行
         If headerRow > 0 Then
             
-            ' データの最終行を取得（★修正箇所：A列を基準に変更）
+            ' データの最終行を取得（A列を基準）
             lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
             dataStartRow = headerRow + 1
             
-            ' データ行が存在する場合のみ実行（ヘッダーのみのシートを除外）
+            ' データ行が存在する場合のみ実行
             If lastRow >= dataStartRow Then
                 
                 ' 3. 条件分岐処理
                 If matchedColumn = "C" Then
                     ' 【パターンA】 C列に「単位」がある場合
                     
-                    ' ヘッダー行のD列の値を取得し、スペースを除去して「単価」と比較
                     checkVal = ws.Cells(headerRow, "D").Value
-                    checkVal = Replace(checkVal, " ", "")  ' 半角スペース除去
-                    checkVal = Replace(checkVal, "　", "") ' 全角スペース除去
+                    checkVal = Replace(checkVal, " ", "")
+                    checkVal = Replace(checkVal, "　", "")
                     
                     ' D列が「単価」ではない場合
                     If checkVal <> "単価" Then
-                        ' E列の書式設定（右揃え、下揃え、インデント0、折り返し解除）
+                        ' E列の書式設定
                         With ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E"))
                             .HorizontalAlignment = xlRight
                             .VerticalAlignment = xlBottom
@@ -73,7 +75,6 @@ Sub FormatAndCalculateAllSheets()
                 ElseIf matchedColumn = "D" Then
                     ' 【パターンB】 D列に「単位」がある場合
                     
-                    ' ヘッダー行のE列の値を取得し、スペースを除去して「単価」と比較
                     checkVal = ws.Cells(headerRow, "E").Value
                     checkVal = Replace(checkVal, " ", "")
                     checkVal = Replace(checkVal, "　", "")
@@ -81,8 +82,7 @@ Sub FormatAndCalculateAllSheets()
                     If checkVal = "単価" Then
                         ' --- 条件: E列が「単価」の場合 ---
                         
-                        ' C列、E列、F列の書式設定（右揃え、下揃え、インデント0、折り返し解除）
-                        ' Unionを使用して複数の範囲をまとめて設定
+                        ' 書式設定を一括適用（ループ外で行う方が高速）
                         With Union(ws.Range(ws.Cells(dataStartRow, "C"), ws.Cells(lastRow, "C")), _
                                    ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E")), _
                                    ws.Range(ws.Cells(dataStartRow, "F"), ws.Cells(lastRow, "F")))
@@ -92,20 +92,32 @@ Sub FormatAndCalculateAllSheets()
                             .IndentLevel = 0
                         End With
                         
-                        ' F列に数式を入力 (=C列 * E列)
-                        ' まず先頭セルに数式を入力
-                        ws.Cells(dataStartRow, "F").Formula = "=C" & dataStartRow & "*E" & dataStartRow
-                        
-                        ' 最終行までオートフィル（データ行が複数ある場合のみ）
-                        If lastRow > dataStartRow Then
-                            ws.Cells(dataStartRow, "F").AutoFill _
-                                Destination:=ws.Range(ws.Cells(dataStartRow, "F"), ws.Cells(lastRow, "F"))
-                        End If
+                        ' 行ごとの計算式設定ループ
+                        For r = dataStartRow To lastRow
+                            cellAVal = ws.Cells(r, "A").Value      ' A列の値
+                            unitVal = ws.Cells(r, "D").Value       ' 単位列(D列)の値
+                            
+                            ' 優先順位1: A列に「計」が含まれている場合
+                            If InStr(cellAVal, "計") > 0 Then
+                                ' データ開始行から直前行までの合計をF列に出す
+                                ' 例: =SUM(F6:F10)
+                                If r > dataStartRow Then
+                                    ws.Cells(r, "F").Formula = "=SUM(F" & dataStartRow & ":F" & (r - 1) & ")"
+                                End If
+                                
+                            ' 優先順位2: 単位列(D列)に値がある場合のみ計算
+                            ElseIf Trim(unitVal) <> "" Then
+                                ' 通常の掛け算: =C行 * E行
+                                ws.Cells(r, "F").Formula = "=C" & r & "*E" & r
+                                
+                            ' それ以外（単位が空で、計でもない）は計算式を記述しない
+                            End If
+                        Next r
                         
                     Else
                         ' --- 条件: E列が「単価」ではない場合 ---
                         
-                        ' E列の書式設定（右揃え、下揃え、インデント0、折り返し解除）
+                        ' E列の書式設定のみ
                         With ws.Range(ws.Cells(dataStartRow, "E"), ws.Cells(lastRow, "E"))
                             .HorizontalAlignment = xlRight
                             .VerticalAlignment = xlBottom
