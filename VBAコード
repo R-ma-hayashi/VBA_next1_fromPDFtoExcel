@@ -43,8 +43,8 @@ Sub FormatAndCalculateAllSheets()
         ' ヘッダーが見つかった場合のみ処理を続行
         If headerRow > 0 Then
             
-            ' データの最終行を取得（C列を基準とする）
-            lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
+            ' データの最終行を取得（★修正箇所：A列を基準に変更）
+            lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
             dataStartRow = headerRow + 1
             
             ' データ行が存在する場合のみ実行（ヘッダーのみのシートを除外）
